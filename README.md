@@ -189,7 +189,7 @@ The robot successfully mapped the entire warehouse environment. The output map (
 
 Full simulation walkthrough — robot spawning in the warehouse environment, SLAM mapping in progress, and the final generated map in RViz:
 
-📹 **[`Screencast from 2026-06-26 18-34-38.webm`](./media/demo.webm)**
+📹 **[`demo.webm`](./media/demo.webm)**
 
 ---
 
