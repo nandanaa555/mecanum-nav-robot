@@ -1,0 +1,27 @@
+# ROS2 build artifacts
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+__MACOSX/
+
+# ROS bags
+*.bag
+*.db3
+
+# Gazebo cache
+.gazebo/
+
+# Compiled URDF (regenerated from xacro)
+*.urdf
