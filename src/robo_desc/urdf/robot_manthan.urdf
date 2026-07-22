@@ -1,0 +1,223 @@
+<?xml version="1.0"?>
+<robot name="del" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===================== ARGUMENTS ===================== -->
+  <xacro:arg name="is_sim" default="true"/>
+
+  <!-- ===================== MATERIALS ===================== -->
+  <material name="chassis_blue">
+    <color rgba="0.2 0.4 0.8 1.0"/>
+  </material>
+  <material name="wheel_black">
+    <color rgba="0.05 0.05 0.05 1.0"/>
+  </material>
+  <material name="caster_grey">
+    <color rgba="0.3 0.3 0.3 1.0"/>
+  </material>
+  <material name="lidar_red">
+    <color rgba="0.8 0.05 0.05 1.0"/>
+  </material>
+
+  <!-- ================ DIMENSIONS (in metres) ================ -->
+  <xacro:property name="chassis_length" value="0.55"/>
+  <xacro:property name="chassis_width"  value="0.395"/>
+  <xacro:property name="chassis_height" value="0.08"/>
+  <xacro:property name="base_height"    value="0.08"/>   <!-- base_footprint -> base_link -->
+
+  <xacro:property name="wheel_radius"   value="0.0762"/>  <!-- 6 inches -->
+  <xacro:property name="wheel_width"    value="0.0508"/>  <!-- 2 inches -->
+  <xacro:property name="wheel_mass"     value="0.3"/>     <!-- each driven wheel -->
+
+  <xacro:property name="caster_radius"  value="0.045"/>
+  <xacro:property name="caster_mass"    value="0.1"/>
+
+  <xacro:property name="lidar_radius"   value="0.035"/>
+  <xacro:property name="lidar_height"   value="0.045"/>
+  <xacro:property name="lidar_mass"     value="0.2"/>
+
+  <!-- Chassis mass (rest of the robot) -->
+  <xacro:property name="chassis_mass"   value="2.0"/>
+
+  <!-- Wheel y-offset (half chassis width + half wheel width) -->
+  <xacro:property name="wheel_y_offset" value="${chassis_width/2 + wheel_width/2}"/>
+
+  <!-- Wheel centre z relative to base_link so that bottom touches ground -->
+  <xacro:property name="wheel_z_offset" value="${wheel_radius - base_height}"/>
+
+  <!-- Caster x position (front) -->
+  <xacro:property name="caster_x"       value="0.15"/>
+
+  <!-- ============================================================
+       BASE_FOOTPRINT – virtual ground link (z=0)
+       ============================================================ -->
+  <link name="base_footprint"/>
+
+  <!-- ============================================================
+       BASE_LINK – chassis centre, elevated by base_height
+       ============================================================ -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="chassis_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${chassis_mass}"/>
+      <!-- Inertia for a uniform box of given dimensions -->
+      <inertia ixx="${(1.0/12.0)*chassis_mass*(chassis_width*chassis_width + chassis_height*chassis_height)}"
+               ixy="0" ixz="0"
+               iyy="${(1.0/12.0)*chassis_mass*(chassis_length*chassis_length + chassis_height*chassis_height)}"
+               iyz="0"
+               izz="${(1.0/12.0)*chassis_mass*(chassis_length*chassis_length + chassis_width*chassis_width)}"/>
+    </inertial>
+  </link>
+
+  <!-- Joint base_footprint -> base_link (fixed) -->
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${base_height}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============================================================
+       DRIVEN WHEELS (left & right)
+       ============================================================ -->
+  <!-- LEFT WHEEL -->
+  <link name="wheel_left_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>  <!-- rotate cylinder to roll along y -->
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <mass value="${wheel_mass}"/>
+      <!-- Inertia of a solid cylinder (axis along local y) -->
+      <inertia ixx="${(1.0/12.0)*wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"
+               ixy="0" ixz="0"
+               iyy="${0.5*wheel_mass*wheel_radius*wheel_radius}"
+               iyz="0"
+               izz="${(1.0/12.0)*wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"/>
+    </inertial>
+  </link>
+
+  <joint name="wheel_left_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_left_link"/>
+    <origin xyz="-0.15 ${wheel_y_offset} ${wheel_z_offset}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- RIGHT WHEEL -->
+  <link name="wheel_right_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <mass value="${wheel_mass}"/>
+      <inertia ixx="${(1.0/12.0)*wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"
+               ixy="0" ixz="0"
+               iyy="${0.5*wheel_mass*wheel_radius*wheel_radius}"
+               iyz="0"
+               izz="${(1.0/12.0)*wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"/>
+    </inertial>
+  </link>
+
+  <joint name="wheel_right_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_right_link"/>
+    <origin xyz="-0.15 -${wheel_y_offset} ${wheel_z_offset}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ============================================================
+       CASTER WHEEL (front centre, passive)
+       ============================================================ -->
+  <link name="caster_wheel_link">
+    <visual>
+      <geometry><sphere radius="${caster_radius}"/></geometry>
+      <material name="caster_grey"/>
+    </visual>
+    <collision>
+      <geometry><sphere radius="${caster_radius}"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="${caster_mass}"/>
+      <inertia ixx="${0.4*caster_mass*caster_radius*caster_radius}"
+               ixy="0" ixz="0"
+               iyy="${0.4*caster_mass*caster_radius*caster_radius}"
+               iyz="0"
+               izz="${0.4*caster_mass*caster_radius*caster_radius}"/>
+    </inertial>
+  </link>
+
+  <joint name="caster_wheel_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_wheel_link"/>
+    <!-- Caster centre at ground level: world z = caster_radius -->
+    <!-- base_link z = base_height, so relative z = caster_radius - base_height -->
+    <origin xyz="0.2 0 -0.035" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============================================================
+       LIDAR (cylinder on top, at front)
+       ============================================================ -->
+  <link name="lidar_link">
+    <visual>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+      <material name="lidar_red"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${lidar_mass}"/>
+      <inertia ixx="${(1.0/12.0)*lidar_mass*(3*lidar_radius*lidar_radius + lidar_height*lidar_height)}"
+               ixy="0" ixz="0"
+               iyy="${(1.0/12.0)*lidar_mass*(3*lidar_radius*lidar_radius + lidar_height*lidar_height)}"
+               iyz="0"
+               izz="${0.5*lidar_mass*lidar_radius*lidar_radius}"/>
+    </inertial>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <!-- Lidar sits on top of chassis, centre at front -->
+    <!-- Chassis top is at base_link z + chassis_height/2 -->
+    <!-- Lidar centre = top + lidar_height/2 -->
+    <origin xyz="${caster_x} 0 ${chassis_height/2 + lidar_height/2}" rpy="0 0 0"/>
+  </joint>
+
+</robot>

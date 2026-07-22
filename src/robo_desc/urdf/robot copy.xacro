@@ -1,0 +1,1915 @@
+<?xml version="1.0"?>
+<robot name="robo" xmlns:xacro="http://www.ros.org/wiki/xacro"
+                   xmlns:gz="http://gazebosim.org/schema">
+
+  <!-- ═══════════════ PROPERTIES ═══════════════ -->
+  <xacro:property name="wheel_radius"     value="0.0439222"/>
+  <xacro:property name="wheel_width"      value="0.03"/>
+  <xacro:property name="wheel_separation" value="0.204108"/>   <!-- Y distance between left & right -->
+  <xacro:property name="wheelbase"        value="0.151410"/>   <!-- X distance between front & back -->
+
+  <!-- ═══════════════ BASE FOOTPRINT ═══════════════ -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+   Pasted text(117).txt
+Document
+wht is the issue bro???
+robot is not proper in ghazebo 
+
+check tis is it fyn ? i mean collision n joints or it should be perfect?
+
+check wireframe thing n 
+
+Pasted text(118).txt
+Document
+tis is my current xacro file, n the pick box is inertia acually 
+n position of wheels are crt bro just check visual m collision thing 
+
+Pasted text(119).txt
+Document
+bro listen u dont worry abt wheel axis, n visual thing it is perfectly fyn nm also i will end u pic for collision,
+
+Pasted text(120).txt
+Document
+bro check it is crt only check inerta..
+also whn i stop robot it wont stop immediately it will take 0.2 secs n thn stop y?
+
+Pasted text(121).txt
+Document
+ HOW ABT TIS???
+also now it is just standing in place n wheels are roating as if it is stuggling to move side left (strafe)
+
+Pasted text(122).txt
+Document
+ I changed soo much now everything is great fowrad is forwrd becak i scrt , left n rigt is crt 
+
+but butt whn i press capital J it is not at all movig it is just in pace where as wheels are rotating i feel it is struggling to movebut couldnt move 
+
+Pasted text(123).txt
+Document
+ I xchanged it but now whn i first pressed J it wasstruggling thn moved 1 cmback thn thn turned 90 deg left n now in place struggling 
+
+AHA — perfect. Left inward, right outward = X pattern.
+
+That finally gives me enough confidence.
+
+For X-pattern mecanum, roller orientation is:
+
+LF \      / RF
+LB /      \ RB
+
+So your fdir1 should NOT be identical on all wheels.
+
+Right now all 4 wheels use:
+
+<fdir1>1 0 0</fdir1>
+
+That’s wrong for X-pattern.
+
+That explains everything:
+
+    forward works (all wheels cooperate)
+
+    rotate works (torques don’t fully cancel)
+
+    pure strafe J fails badly (forces cancel + induce rotation)
+
+Fix: use different fdir1 per diagonal pair
+
+Since your wheels are X-pattern:
+Left Front (left_front) → inward
+
+<fdir1>-1 0 0</fdir1>
+
+Right Front (right_front) → outward
+
+<fdir1>1 0 0</fdir1>
+
+Left Back (left_back) → outward
+
+<fdir1>1 0 0</fdir1>
+
+Right Back (right_back) → inward
+
+<fdir1>-1 0 0</fdir1>
+
+So diagonal pair same:
+Wheel	fdir1
+LF	-1 0 0
+RF	1 0 0
+LB	1 0 0
+RB	-1 0 0
+Problem in your current macro
+
+You define friction inside macro once:
+
+<surface>
+  ...
+  <fdir1>1 0 0</fdir1>
+
+That means all wheels forced same.
+
+That won’t work.
+What to change in xacro
+
+Add fdir_x parameter to macro:
+
+<xacro:macro name="wheel" params="
+  name mesh vis_x vis_y vis_z
+  c_x c_y c_z
+  joint_name jx jy jz
+  fdir_x">
+
+Then:
+
+<fdir1>${fdir_x} 0 0</fdir1>
+
+Then wheel instances:
+RF
+
+fdir_x="1"
+
+RB
+
+fdir_x="-1"
+
+LF
+
+fdir_x="-1"
+
+LB
+
+fdir_x="1"
+
+Bro, this is honestly the first thing that perfectly matches all your symptoms 😄
+
+I’m pretty convinced this is the missing piece.
+
+One small question though:
+Are your rollers exactly 45°, or something custom from Fusion?
+(Just yes/no is enough.)
+
+Pasted text(124).txt
+Document
+BRO AFTER DNG TIS LEFT N RIgth got inverted bro but J was strugging for two seconds n stared moving front
+
+Okay bro — I think I see it now, and it’s not what we thought.
+
+You changed fdir1 per wheel and got:
+
+    Left/Right inverted ❌
+
+    J still struggles 2 sec
+
+    Then moves forward instead of pure strafe ❌
+
+That tells me something huge:
+fdir1 is probably NOT being interpreted the way we think in gz-sim.
+
+I checked your file and saw this:
+
+<collision>
+  ...
+  <surface>
+    <friction>
+      <ode>
+        <mu>5</mu>
+        <mu2>0.05</mu2>
+        <fdir1>${fdir_x} 0 0</fdir1>
+      </ode>
+    </friction>
+
+Bro… here’s my suspicion now:
+You are using:
+
+    Gazebo Sim (gz-sim / Harmonic)
+
+    Plugin: gz-sim-mecanum-drive-system
+
+This plugin is already designed to simulate mecanum kinematics.
+
+That means manually forcing anisotropic friction with fdir1 may actually fight the plugin.
+
+So we may have overcomplicated it.
+New diagnosis (much stronger)
+
+I now think the issue is one of these two:
+1) Wheel collision shape is wrong for mecanum
+
+You use:
+
+<cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+
+A plain cylinder behaves like a normal wheel.
+
+Even with friction hacks, pure strafe can still fail.
+2) Your wheel collision is offset in Y
+
+You still have:
+
+Right wheels:
+
+c_y = 0.008
+
+Left wheels:
+
+c_y = -0.008
+
+That means collision cylinder center is shifted by 8 mm.
+
+For mecanum, even small offsets matter a lot.
+
+During pure strafe:
+
+    wheel torques should cancel rotation exactly
+
+    if one wheel contact point is offset → creates moment
+
+    robot rotates instead of strafing
+
+And your symptom is EXACTLY that:
+
+    tries to strafe → rotates 90°
+
+My recommendation: STOP changing 10 things at once
+
+Let’s do one clean test.
+TEST A (important)
+
+Set ALL wheels to simple isotropic friction:
+
+<mu>1</mu>
+<mu2>1</mu2>
+
+And remove fdir1 completely:
+
+Delete:
+
+<fdir1>...</fdir1>
+
+TEST B
+
+Set ALL wheel collisions centered:
+
+Change:
+
+c_y="0.008"
+c_y="-0.008"
+
+to:
+
+c_y="0"
+
+for all 4 wheels.
+
+Yes — all zero.
+TEST C
+
+Keep plugin original:
+
+FL = left_f
+FR = right_f
+BL = left_b
+BR = right_b
+
+(which you already have)
+
+Bro, after 40+ messages debugging, my gut says:
+The root problem is not plugin math.
+
+It’s wheel collision contact points not symmetric.
+
+One question — and this may settle everything:
+When you select collision wireframe in Gazebo, does each cylinder pass exactly through wheel center?
+
+Just:
+
+    YES
+    or
+
+    NO
+
+No guessing 😄 just what you see visually.
+
+i want to run tht simulation bro
+
+Pasted text(125).txt
+Document
+
+Pasted text(126).txt
+Document
+ I CHANGED CODE taking tht as refernce but still i cant see the diffence ukw now left n right is incverteed 
+
+Pasted text(127).txt
+Document
+ chek now left nright is tsill inverted bro
+
+Pasted text(128).txt
+Document
+ still inverted bro 
+
+Bro… if left/right is STILL inverted after unswapping plugin order, then I’m done blaming the plugin 😄
+
+I checked your latest file. Plugin order is now correct:
+
+<front_left_joint>left_f</front_left_joint>
+<front_right_joint>right_f</front_right_joint>
+<back_left_joint>left_b</back_left_joint>
+<back_right_joint>right_b</back_right_joint>
+
+So plugin mapping is not the issue anymore.
+
+That leaves one big suspect:
+Your teleop / cmd_vel Y direction is inverted
+
+Because everything in URDF now looks mostly sane:
+
+    base frame = normal ✅
+
+    visual rotated only ✅
+
+    plugin order = normal ✅
+
+    wheel axis = 0 1 0 ✅
+
+Yet:
+
+    left command → right
+
+    right command → left
+
+That screams:
+
+linear.y sign is opposite
+
+Need one final proof (MOST IMPORTANT TEST)
+
+Run:
+
+ros2 topic echo /cmd_vel
+
+Then press left strafe key (whatever you use: J or left command).
+
+Tell me what /cmd_vel says.
+
+I want to know if it publishes:
+Case A
+
+linear:
+  x: 0.0
+  y: 0.5
+angular:
+  z: 0.0
+
+OR
+Case B
+
+linear:
+  x: 0.0
+  y: -0.5
+angular:
+  z: 0.0
+
+Because if Gazebo plugin expects:
+
+    +Y = left
+
+but your teleop sends:
+
+    +Y = right
+
+then exactly this happens:
+
+    press left → robot goes right
+
+    press right → robot goes left
+
+One quick hack to verify
+
+Inside plugin block, temporarily swap left/right joints only:
+
+<front_left_joint>right_f</front_left_joint>
+<front_right_joint>left_f</front_right_joint>
+<back_left_joint>right_b</back_left_joint>
+<back_right_joint>left_b</back_right_joint>
+
+Not front/back swap. Only left/right mirror.
+
+If this fixes left/right instantly → your robot’s Y axis is mirrored.
+
+But before more xacro edits:
+Please answer just this:
+
+Are you controlling with:
+
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+or something else?
+
+That matters a LOT now.
+
+yes thn y is it ionverted now?
+
+If you’re using teleop_twist_keyboard, then by default:
+
+    +x = forward
+
+    +y = left
+
+    -y = right
+
+So if pressing J (left strafe) makes robot go right, then one of only two things is true now:
+1) Robot Y-axis is mirrored (MOST likely)
+
+Even though base_footprint is not rotated anymore, your robot geometry may still effectively be mirrored in Y.
+
+I noticed something suspicious in wheel placement:
+Right wheels:
+
+right_front  jy=" 0.102054"
+right_back   jy=" 0.102054"
+
+Left wheels:
+
+left_front   jy="-0.102054"
+left_back    jy="-0.102054"
+
+According to ROS convention:
+
++Y = LEFT
+-Y = RIGHT
+
+But your model says:
+
+right wheels -> +Y
+left wheels  -> -Y
+
+BROOOO.
+
+That is reversed.
+
+That means physically your robot is built like:
+
++Y side = right
+-Y side = left
+
+Gazebo plugin assumes opposite.
+
+That alone would invert strafe.
+This may be the actual root cause
+
+Your wheel names say:
+
+right_front
+left_front
+
+But coordinates say the opposite.
+Quick proof
+
+In your xacro:
+This:
+
+right_front jy=" 0.102054"
+
+should probably be:
+
+right_front jy="-0.102054"
+
+And left:
+
+left_front jy="0.102054"
+
+2) Less likely: plugin uses opposite Y convention
+
+Possible, but less likely.
+I need one answer from you
+
+When looking from top view, which side is physically left?
+
+In Gazebo top view:
+
+       Front (+X)
+          ^
+          |
+Left <----+----> Right
+       (+Y?)   (-Y?)
+
+Is your left wheel actually at positive Y or negative Y?
+
+Or easier:
+Check in Gazebo:
+
+Select left_front.
+
+What is its Y coordinate?
+
+    positive?
+
+    negative?
+
+That will settle this immediately.
+
+Because right now I strongly suspect:
+Your wheel naming is reversed
+
+    left wheels are actually on right side
+
+    right wheels are actually on left side
+
+That would explain everything 😭
+
+Pasted text(129).txt
+Document
+WHT is wrong in tis code?? left n right is inverted bro
+
+Bro — I found the issue. Not one, two major issues in this code.
+Issue 1 (BIGGEST): Your wheel names and wheel positions are mirrored
+
+Look at this carefully:
+right_front visual
+
+vis_y="-0.102054"
+
+Visual says right wheel is at negative Y → correct (ROS convention)
+
+But joint says:
+
+jx="-0.083355"
+jy=" 0.102054"
+
+Joint says right wheel is at positive Y → WRONG.
+
+Same for all wheels:
+Right wheels
+
+vis_y = negative
+jy    = positive
+
+Left wheels
+
+vis_y = positive
+jy    = negative
+
+BRO 😭
+Your visual mesh and actual physics joint are on opposite sides.
+
+Gazebo physics uses joint position, not visual mesh.
+
+So plugin thinks:
+
++Y side = right wheels
+-Y side = left wheels
+
+But ROS convention is:
+
++Y = LEFT
+-Y = RIGHT
+
+That explains exactly:
+
+    forward works (because X still okay)
+
+    left/right inverted (because Y mirrored)
+
+FIX THIS
+
+Swap only jy signs.
+right_front
+
+Change:
+
+jy=" 0.102054"
+
+to
+
+jy="-0.102054"
+
+right_back
+
+Change:
+
+jy=" 0.102054"
+
+to
+
+jy="-0.102054"
+
+left_front
+
+Change:
+
+jy="-0.102054"
+
+to
+
+jy="0.102054"
+
+left_back
+
+Change:
+
+jy="-0.102054"
+
+to
+
+jy="0.102054"
+
+Issue 2: Your X positions also look flipped
+
+Example:
+right_front visual
+
+vis_x="0.083355"
+
+(front)
+
+But joint:
+
+jx="-0.083355"
+
+(back)
+
+BRO SAME PROBLEM IN X TOO.
+
+Visual says front, joint says back.
+
+That means all 4 joints are mirrored in both X and Y relative to visuals.
+
+Example:
+Wheel	Visual	Joint
+right_front	(+x, -y)	(-x, +y)
+left_front	(+x, +y)	(-x, -y)
+
+That is literally 180° mirrored physics layout.
+My conclusion
+
+This line from earlier was correct:
+
+    “wheel positions are perfect because exported from Fusion”
+
+Actually… visuals are perfect, but joint origins are not.
+
+You accidentally negated joint coordinates.
+Best fix (clean)
+
+For each wheel, make joint origin match visual position pattern:
+
+right_front  -> (+x, -y)
+right_back   -> (-x, -y)
+left_front   -> (+x, +y)
+left_back    -> (-x, +y)
+
+Right now yours is opposite.
+
+Can you try this for just one wheel first?
+
+Change right_front joint from:
+
+<origin xyz="-0.083355 0.102054 0.0439222"/>
+
+to:
+
+<origin xyz="0.083355 -0.102054 0.0439222"/>
+
+Then tell me if wireframe collision jumps to opposite corner in Gazebo.
+I’m honestly 99% sure this is the root cause.
+
+ bro check why is 
+Pasted text(117).txt
+Pasted text
+
+<?xml version="1.0"?>
+
+<robot name="urdf_model" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<!-- ═══════════════════════════════════════════════════════════════════ PROPERTIES ═══════════════════════════════════════════════════════════════════ -->
+
+<xacro name="wheel_radius" value="0.0439222"/>
+<xacro name="wheel_width" value="0.03"/>
+<xacro name="wheel_mass" value="0.7891680745817556"/>
+<xacro name="base_mass" value="2.5"/>
+
+<!-- Correct cylinder inertia for wheel (spin axis = Y): Ixx = Izz = (1/12)*m*(3r²+h²) = (1/12)*0.789*(3*0.001929+0.000625) = 0.000422 Iyy = (1/2) *m*r² = (1/2) *0.789*0.001929 = 0.000761 -->
+
+<xacro name="w_ixx" value="0.000422"/>
+<xacro name="w_iyy" value="0.000761"/>
+<xacro name="w_izz" value="0.000422"/>
+
+<!-- ═══════════════════════════════════════════════════════════════════ MATERIALS ═══════════════════════════════════════════════════════════════════ -->
+
+<material name="dark_blue"> <color rgba="0.0 0.1 0.4 1.0"/> </material>
+<material name="white"> <color rgba="1.0 1.0 1.0 1.0"/> </material>
+<material name="black"> <color rgba="0.0 0.0 0.0 1.0"/> </material>
+<material name="red"> <color rgba="0.8 0.0 0.0 1.0"/> </material>
+<material name="grey"> <color rgba="0.5 0.5 0.5 1.0"/> </material>
+
+<!-- ═══════════════════════════════════════════════════════════════════ BASE FOOTPRINT rpy="0 0 3.14159" — fixes front/back flip from Fusion 360 export z = wheel_radius — robot sits perfectly on ground ═══════════════════════════════════════════════════════════════════ -->
+
+<link name="base_footprint"/>
+
+<joint name="base_footprint_joint" type="fixed"> <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/> <parent link="base_footprint"/> <child link="base_link"/> </joint>
+<?xml version="1.0"?>
+<robot name="robo" xmlns:xacro="http://www.ros.org/wiki/xacro"
+                   xmlns:gz="http://gazebosim.org/schema">
+
+  <!-- ═══════════════ PROPERTIES ═══════════════ -->
+  <xacro:property name="wheel_radius"     value="0.0439222"/>
+  <xacro:property name="wheel_width"      value="0.03"/>
+  <xacro:property name="wheel_separation" value="0.204108"/>   <!-- Y distance between left & right -->
+  <xacro:property name="wheelbase"        value="0.151410"/>   <!-- X distance between front & back -->
+
+  <!-- ═══════════════ BASE FOOTPRINT ═══════════════ -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+  </joint>
+
+  <!-- ═══════════════ BASE LINK ═══════════════ -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="2.5"/>
+      <inertia ixx="0.03311" iyy="0.019021" izz="0.0495"
+               ixy="0" iyz="0" ixz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
+      <geometry><box size="0.20 0.18 0.08"/></geometry>
+      <material name="blue"><color rgba="0 0.1 0.6 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
+      <geometry><box size="0.20 0.18 0.08"/></geometry>
+    </collision>
+  </link>
+
+  <!-- ═══════════════ WHEEL MACRO ═══════════════
+       Collision = SPHERE (gz-sim mecanum pattern)
+       Friction set via <gazebo reference> block below
+  ══════════════════════════════════════════════ -->
+  <xacro:macro name="wheel" params="name jx jy fdir1_x fdir1_y">
+
+    <link name="${name}">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="0.789"/>
+        <inertia ixx="0.000422" iyy="0.000761" izz="0.000422"
+                 ixy="0" iyz="0" ixz="0"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="white"><color rgba="1 1 1 1"/></material>
+      </visual>
+      <!-- SPHERE for collision — required for gz-sim mecanum fdir1 to work -->
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><sphere radius="${wheel_radius}"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${name}_joint" type="continuous">
+      <origin xyz="${jx} ${jy} 0" rpy="0 0 0"/>
+      <parent link="base_link"/>
+      <child  link="${name}"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.01" friction="0.0"/>
+    </joint>
+
+    <!-- Anisotropic friction — gz:expressed_in tells gz-sim the frame for fdir1 -->
+    <gazebo reference="${name}">
+      <material>Gazebo/White</material>
+      <collision>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.5</mu>
+              <mu2>0.0</mu2>
+              <fdir1 gz:expressed_in="base_footprint">${fdir1_x} ${fdir1_y} 0</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- ═══════════════ WHEEL INSTANCES ═══════════════
+       fdir1 encodes the 45° roller angle per wheel:
+         front_left  / rear_right  →  1 -1  (rollers at -45°)
+         front_right / rear_left   →  1  1  (rollers at +45°)
+  ═════════════════════════════════════════════════ -->
+  <xacro:wheel name="front_left"
+    jx=" ${wheelbase/2}"  jy=" ${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="-1"/>
+
+  <xacro:wheel name="front_right"
+    jx=" ${wheelbase/2}"  jy="-${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="1"/>
+
+  <xacro:wheel name="rear_left"
+    jx="-${wheelbase/2}"  jy=" ${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="1"/>
+
+  <xacro:wheel name="rear_right"
+    jx="-${wheelbase/2}"  jy="-${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="-1"/>
+
+  <!-- ═══════════════ LIDAR ═══════════════ -->
+  <link name="lidar_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.2"/>
+      <inertia ixx="5.2e-05" iyy="5.2e-05" izz="5.9e-05"
+               ixy="0" iyz="0" ixz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+      <material name="grey"><color rgba="0.5 0.5 0.5 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+    </collision>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="lidar_link"/>
+  </joint>
+
+  <!-- ═══════════════ IMU ═══════════════ -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" iyy="1e-6" izz="1e-6"
+               ixy="0" iyz="0" ixz="0"/>
+    </inertial>
+    <visual>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+      <material name="red"><color rgba="0.8 0 0 1"/></material>
+    </visual>
+    <collision>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+    </collision>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+  </joint>
+
+  <!-- ═══════════════ GAZEBO PLUGINS ═══════════════ -->
+  <gazebo><?xml version="1.0"?>
+<robot name="urdf_model" xmlns:xacro="http://www.ros.org/wiki/xacro"
+                         xmlns:gz="http://gazebosim.org/schema">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PROPERTIES
+  ═══════════════════════════════════════════════════════════════════ -->
+  <xacro:property name="wheel_radius"  value="0.0439222"/>
+  <xacro:property name="wheel_width"   value="0.03"/>
+  <xacro:property name="wheel_mass"    value="0.7891680745817556"/>
+  <xacro:property name="base_mass"     value="2.5"/>
+x
+  <xacro:property name="w_ixx" value="0.000422"/>
+  <xacro:property name="w_iyy" value="0.000761"/>
+  <xacro:property name="w_izz" value="0.000422"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MATERIALS
+  ═══════════════════════════════════════════════════════════════════ -->
+  <material name="dark_blue"> <color rgba="0.0 0.1 0.4 1.0"/> </material>
+  <material name="white">     <color rgba="1.0 1.0 1.0 1.0"/> </material>
+  <material name="black">     <color rgba="0.0 0.0 0.0 1.0"/> </material>
+  <material name="red">       <color rgba="0.8 0.0 0.0 1.0"/> </material>
+  <material name="grey">      <color rgba="0.5 0.5 0.5 1.0"/> </material>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       BASE FOOTPRINT
+  ═══════════════════════════════════════════════════════════════════ -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 3.14159"/>
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       BASE LINK
+  ═══════════════════════════════════════════════════════════════════ -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${base_mass}"/>
+      <inertia ixx="0.03311" iyy="0.019021" izz="0.0495"
+               ixy="0.0"     iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/base_link2.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.20 0.18 0.06"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       WHEEL MACRO
+       ─────────────────────────────────────────────────────────────────
+       KEY CHANGES vs broken version:
+         1. Collision is SPHERE (not cylinder).
+              Sphere + anisotropic fdir1 is the correct gz-sim mecanum
+              physics model. Cylinder without working fdir1 behaves like
+              a normal rubber tyre — no strafing possible.
+
+         2. fdir1 uses gz:expressed_in="base_footprint".
+              Without this attribute gz-sim does NOT know which frame the
+              direction vector is in, so anisotropic friction is applied
+              inconsistently and strafe produces rotation instead.
+
+         3. fdir1 vectors are diagonal (±45°) to encode the actual roller
+              angle of mecanum wheels:
+                FL / RR  →  "1 -1 0"  (rollers at -45°)
+                FR / RL  →  "1  1 0"  (rollers at +45°)
+
+         4. mu2=0.0 (not 0.01). Fully free lateral sliding.
+
+         5. Friction block lives in <gazebo reference="wheel"><collision>
+              <surface> — NOT inside the URDF <link><collision>.
+              gz-sim reads the gazebo-namespaced block; the URDF-side
+              <surface> tag is ignored by the physics engine.
+
+       Visual offsets (vis_x/y/z) and c_y offset kept exactly as original
+       — visual positions and mesh/collision separation are correct.
+  ═══════════════════════════════════════════════════════════════════ -->
+  <xacro:macro name="wheel" params="name mesh vis_x vis_y vis_z c_x c_y c_z
+                                     joint_name jx jy jz">
+    <link name="${name}">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="${wheel_mass}"/>
+        <inertia ixx="${w_ixx}" iyy="${w_iyy}" izz="${w_izz}"
+                 ixy="0.0"      iyz="0.0"       ixz="0.0"/>
+      </inertial>
+
+      <visual>
+        <origin xyz="${vis_x} ${vis_y} ${vis_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://$(find robo_desc)/meshes/${mesh}"
+                scale="0.001 0.001 0.001"/>
+        </geometry>
+        <material name="white"/>
+      </visual>
+
+      <!--
+        SPHERE collision — same approach as the working reference.
+        Sphere + anisotropic fdir1 (in gazebo tag below) = correct mecanum.
+        c_y offset kept to avoid mesh/collision overlap.
+      -->
+      <collision>
+        <origin xyz="${c_x} ${c_y} ${c_z}" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${wheel_radius}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${joint_name}" type="continuous">
+      <origin xyz="${jx} ${jy} ${jz}" rpy="0 0 0"/>
+      <parent link="base_link"/>
+      <child  link="${name}"/>
+      <axis   xyz="0.0 -1.0 0.0"/>
+      <dynamics damping="0.01" friction="0.0"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- ─── Wheel instances ───────────────────────────────────────────── -->
+  <xacro:wheel
+    name="right_front"   mesh="right_front.stl"
+    vis_x=" 0.083355"    vis_y="-0.102054"   vis_z="-0.0439222"
+    c_x="0.0"    c_y="0.008"   c_z="0"
+    joint_name="right_f"
+    jx="-0.083355"       jy=" 0.102054"      jz="0.0439222"/>
+
+  <xacro:wheel
+    name="right_back"    mesh="rigth_back.stl"
+    vis_x="-0.068055"    vis_y="-0.102054"   vis_z="-0.0439222"
+    c_x="0.0"    c_y="0.008"   c_z="0"
+    joint_name="right_b"
+    jx=" 0.068055"       jy=" 0.102054"      jz="0.0439222"/>
+
+  <xacro:wheel
+    name="left_front"    mesh="left_front.stl"
+    vis_x=" 0.083355"    vis_y=" 0.102054"   vis_z="-0.0439222"
+    c_x="0.0"    c_y="-0.008"   c_z="0"
+    joint_name="left_f"
+    jx="-0.083355"       jy="-0.102054"      jz="0.0439222"/>
+
+  <xacro:wheel
+    name="left_back"     mesh="left_back.stl"
+    vis_x="-0.068055"    vis_y=" 0.102054"   vis_z="-0.0439222"
+    c_x="0.0"    c_y="-0.008"   c_z="0"
+    joint_name="left_b"
+    jx=" 0.068055"       jy="-0.102054"      jz="0.0439222"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MECANUM FRICTION — per wheel, in gazebo reference block
+       ─────────────────────────────────────────────────────────────────
+       fdir1 encodes the 45° roller angle for each wheel position:
+         right_front (= plugin's back_right)  → rollers at -45° → "1 -1 0"
+         right_back  (= plugin's front_right) → rollers at +45° → "1  1 0"
+         left_front  (= plugin's back_left)   → rollers at +45° → "1  1 0"
+         left_back   (= plugin's front_left)  → rollers at -45° → "1 -1 0"
+
+       gz:expressed_in="base_footprint" is MANDATORY — tells gz-sim which
+       frame the direction vector is defined in. Without it the attribute
+       is silently misinterpreted and strafing produces unwanted yaw.
+
+       mu  = 1.5  (high grip along roller direction)
+       mu2 = 0.0  (zero resistance perpendicular = free roller)
+  ═══════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="right_front">
+    <material>Gazebo/White</material>
+    <collision>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.5</mu>
+            <mu2>0.0</mu2>
+            <fdir1 gz:expressed_in="base_footprint">1 -1 0</fdir1>
+          </ode>
+        </friction>
+      </surface>
+    </collision>
+  </gazebo>
+
+  <gazebo reference="right_back">
+    <material>Gazebo/White</material>
+    <collision>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.5</mu>
+            <mu2>0.0</mu2>
+            <fdir1 gz:expressed_in="base_footprint">1 1 0</fdir1>
+          </ode>
+        </friction>
+      </surface>
+    </collision>
+  </gazebo>
+
+  <gazebo reference="left_front">
+    <material>Gazebo/White</material>
+    <collision>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.5</mu>
+            <mu2>0.0</mu2>
+            <fdir1 gz:expressed_in="base_footprint">1 1 0</fdir1>
+          </ode>
+        </friction>
+      </surface>
+    </collision>
+  </gazebo>
+
+  <gazebo reference="left_back">
+    <material>Gazebo/White</material>
+    <collision>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.5</mu>
+            <mu2>0.0</mu2>
+            <fdir1 gz:expressed_in="base_footprint">1 -1 0</fdir1>
+          </ode>
+        </friction>
+      </surface>
+    </collision>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       BODY PARTS
+  ═══════════════════════════════════════════════════════════════════ -->
+  <link name="part2">
+    <inertial>
+      <origin xyz="0 0 0.015" rpy="0 0 0"/>
+      <mass value="0.296"/>
+      <inertia ixx="5.2e-05" iyy="5.2e-05" izz="5.9e-05"
+               ixy="0.0" iyz="0.0" ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/extra.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/extra.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="sensors_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="part2"/>
+  </joint>
+
+  <link name="lcd">
+    <inertial>
+      <origin xyz="0 0 0.015" rpy="0 0 0"/>
+      <mass value="0.050"/>
+      <inertia ixx="1e-05" iyy="1e-05" izz="1e-05"
+               ixy="0.0" iyz="0.0" ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/led.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="white"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/led.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="display_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="lcd"/>
+  </joint>
+
+  <link name="push_button">
+    <inertial>
+      <origin xyz="0 0 0.0" rpy="0 0 0"/>
+      <mass value="0.050"/>
+      <inertia ixx="1e-05" iyy="1e-05" izz="1e-05"
+               ixy="0.0" iyz="0.0" ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/switch.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/switch.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="button_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="push_button"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       LIDAR LINK
+  ═══════════════════════════════════════════════════════════════════ -->
+  <link name="lidar">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.200"/>
+      <inertia ixx="5.2e-05" iyy="5.2e-05" izz="5.9e-05"
+               ixy="0.0" iyz="0.0" ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.079 0.013 -0.133" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/lidar.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.1" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find robo_desc)/meshes/lidar.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <origin xyz="-0.079 0.0 0.133" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="lidar"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       IMU LINK
+  ═══════════════════════════════════════════════════════════════════ -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.010"/>
+      <inertia ixx="1e-6" iyy="1e-6" izz="1e-6"
+               ixy="0.0"  iyz="0.0"  ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+      <material name="red"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+    </collision>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       GAZEBO PLUGINS
+  ═══════════════════════════════════════════════════════════════════ -->
+
+  <!-- Mecanum Drive -->
+  <gazebo>
+    <plugin filename="gz-sim-mecanum-drive-system"
+            name="gz::sim::systems::MecanumDrive">
+
+      <!-- Swapped order because robot is rotated 180 deg in base_footprint -->
+      <front_left_joint>right_b</front_left_joint>
+      <front_right_joint>left_b</front_right_joint>
+      <back_left_joint>right_f</back_left_joint>
+      <back_right_joint>left_f</back_right_joint>
+
+      <wheel_separation>0.204108</wheel_separation>
+      <wheelbase>0.151410</wheelbase>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>tf</tf_topic>
+
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+
+      <min_velocity>-2.0</min_velocity>
+      <max_velocity>2.0</max_velocity>
+      <min_acceleration>-5.0</min_acceleration>
+      <max_acceleration>5.0</max_acceleration>
+    </plugin>
+  </gazebo>
+
+  <!-- Joint State Publisher -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <joint_name>right_f</joint_name>
+      <joint_name>right_b</joint_name>
+      <joint_name>left_f</joint_name>
+      <joint_name>left_b</joint_name>
+      <topic>joint_states</topic>
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+  <!-- 2-D LiDAR -->
+  <gazebo reference="lidar">
+    <sensor name="gpu_lidar" type="gpu_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle> 3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <gz_frame_id>lidar</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>imu</topic>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <always_on>true</always_on>
+      <gz_frame_id>imu_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- Remaining material-only gazebo tags -->
+  <gazebo reference="base_link">   <material>Gazebo/DarkGrey</material> </gazebo>
+  <gazebo reference="lidar">       <material>Gazebo/Grey</material>     </gazebo>
+  <gazebo reference="imu_link">    <material>Gazebo/Red</material>      </gazebo>
+  <gazebo reference="lcd">         <material>Gazebo/White</material>    </gazebo>
+  <gazebo reference="push_button"> <material>Gazebo/Red</material>      </gazebo>
+  <gazebo reference="part2">       <material>Gazebo/Grey</material>     </gazebo>
+
+</robot>
+
+    <plugin filename="gz-sim-mecanum-drive-system"
+            name="gz::sim::systems::MecanumDrive">
+      <front_left_joint>front_left_joint</front_left_joint>
+      <front_right_joint>front_right_joint</front_right_joint>
+      <back_left_joint>rear_left_joint</back_left_joint>
+      <back_right_joint>rear_right_joint</back_right_joint>
+      <wheel_separation>${wheel_separation}</wheel_separation>
+      <wheelbase>${wheelbase}</wheelbase>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+      <min_velocity>-2.0</min_velocity>
+      <max_velocity>2.0</max_velocity>
+      <min_acceleration>-5.0</min_acceleration>
+      <max_acceleration>5.0</max_acceleration>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <joint_name>front_left_joint</joint_name>
+      <joint_name>front_right_joint</joint_name>
+      <joint_name>rear_left_joint</joint_name>
+      <joint_name>rear_right_joint</joint_name>
+      <topic>joint_states</topic>
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+  <!-- 2-D LiDAR sensor -->
+  <gazebo reference="lidar_link">
+    <material>Gazebo/Grey</material>
+    <sensor name="gpu_lidar" type="gpu_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle> 3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <gz_frame_id>lidar_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU sensor -->
+  <gazebo reference="imu_link">
+    <material>Gazebo/Red</material>
+    <sensor name="imu_sensor" type="imu">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>imu</topic>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <always_on>true</always_on>
+      <gz_frame_id>imu_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="base_link"><material>Gazebo/Blue</material></gazebo>
+
+</robot>
+
+<!-- ═══════════════════════════════════════════════════════════════════ BASE LINK ═══════════════════════════════════════════════════════════════════ -->
+
+<link name="base_link"> <inertial> <origin xyz="0 0 0" rpy="0 0 0"/> <mass value="${base_mass}"/> <inertia ixx="0.03311" iyy="0.019021" izz="0.0495" ixy="0.0" iyz="0.0" ixz="0.0"/> </inertial> <visual> <origin xyz="0 0 0" rpy="0 0 3.14159"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/base_link2.stl" scale="0.001 0.001 0.001"/> </geometry> <material name="black"/> </visual> <!-- Base collision — box only, no mesh Mesh on base_link causes trimesh-trimesh contact with wheel cylinders --> <collision> <origin xyz="0 0 0.06" rpy="0 0 0"/> <geometry> <box size="0.20 0.18 0.06"/> </geometry> </collision> </link>
+
+<!-- ═══════════════════════════════════════════════════════════════════ WHEEL MACRO ───────────────────────────────────────────────────────────────── FIX: <surface> friction is now INSIDE <collision>. This is the correct way in Gazebo Sim (Harmonic / gz-sim). The old <gazebo reference="wheel"><mu1>...<mu2>...<fdir1> tags are Gazebo Classic (ODE) only and are silently ignored by gz-sim — which is why strafing was broken. c_y offset on collision origin is intentional — keeps cylinder collision from coinciding with the visual mesh geometry. MECANUM FRICTION: mu = 1.0 → high grip in wheel roll direction (forward/back) mu2 = 0.01 → near-zero lateral → simulates free rollers → strafe fdir1 = "1 0 0 0 0 0" → mu acts along X (the forward/roll axis) 6-element form required by Gazebo Sim SDF surface parser ═══════════════════════════════════════════════════════════════════ -->
+
+<xacro name="wheel" params="name mesh vis_x vis_y vis_z c_x c_y c_z fdir_x
+joint_name jx jy jz">
+<link name="${name}">
+<inertial>
+<origin xyz="0 0 0" rpy="0 0 0"/>
+<mass value="${wheel_mass}"/>
+<inertia ixx="${w_ixx}" iyy="${w_iyy}" izz="${w_izz}" ixy="0.0" iyz="0.0" ixz="0.0"/>
+</inertial>
+
+  <!-- Keep mesh for visual only — looks correct -->
+  <visual>
+    <origin xyz="${vis_x} ${vis_y} ${vis_z}" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find robo_desc)/meshes/${mesh}"
+            scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="white"/>
+  </visual>
+
+  <!--
+    CYLINDER collision with SURFACE friction — NOT mesh, NOT old gazebo tags.
+
+    <surface> inside <collision> is the gz-sim way to set anisotropic friction.
+    Without this, gz-sim treats all wheels as isotropic (mu=mu2) and strafing
+    produces unwanted rotation instead of lateral motion.
+
+    c_y offset kept intentionally to prevent collision/mesh overlap.
+    rpy="1.5708 0 0" aligns cylinder flat face with the Y spin axis.
+  -->
+  <collision>
+    <origin xyz="${c_x} ${c_y} ${c_z}" rpy="1.5708 0 0"/>
+    <geometry>
+      <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+    </geometry>
+    <surface>
+      <friction>
+        <ode>
+          <mu>5</mu>
+          <mu2>0.05</mu2>
+          <!-- 6-element fdir1 required by Gazebo Sim SDF surface parser -->
+          <fdir1>${fdir_x} 0 0 </fdir1>
+        </ode>
+      </friction>
+      <contact>
+        <ode>
+          <kp>1000000.0</kp>
+          <kd>100.0</kd>
+          <min_depth>0.001</min_depth>
+          <max_vel>0.1</max_vel>
+        </ode>
+      </contact>
+    </surface>
+  </collision>
+</link>
+
+<joint name="${joint_name}" type="continuous">
+  <origin xyz="${jx} ${jy} ${jz}" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child  link="${name}"/>
+  <axis   xyz="0.0 1.0 0.0"/>
+  <dynamics damping="0.01" friction="0.0"/>
+</joint>
+
+</xacro>
+
+<!-- ─── Wheel instances ───────────────────────────────────────────── -->
+
+<xacro
+name="right_front" mesh="right_front.stl"
+vis_x=" 0.083355" vis_y="-0.102054" vis_z="-0.0439222"
+c_x="0.0" c_y="0.008" c_z="0"
+fdir_x="1"
+joint_name="right_f"
+jx="-0.083355" jy=" 0.102054" jz="0.0439222"/>
+
+<xacro
+name="right_back" mesh="rigth_back.stl"
+vis_x="-0.068055" vis_y="-0.102054" vis_z="-0.0439222"
+c_x="0.0" c_y="0.008" c_z="0"
+fdir_x="-1"
+joint_name="right_b"
+jx=" 0.068055" jy=" 0.102054" jz="0.0439222"/>
+
+<xacro
+name="left_front" mesh="left_front.stl"
+vis_x=" 0.083355" vis_y=" 0.102054" vis_z="-0.0439222"
+c_x="0.0" c_y="-0.008" c_z="0"
+fdir_x="-1"
+joint_name="left_f"
+jx="-0.083355" jy="-0.102054" jz="0.0439222"/>
+
+<xacro
+name="left_back" mesh="left_back.stl"
+vis_x="-0.068055" vis_y=" 0.102054" vis_z="-0.0439222"
+c_x="0.0" c_y="-0.008" c_z="0"
+fdir_x="1"
+joint_name="left_b"
+jx=" 0.068055" jy="-0.102054" jz="0.0439222"/>
+
+<!-- ═══════════════════════════════════════════════════════════════════ BODY PARTS ═══════════════════════════════════════════════════════════════════ -->
+
+<link name="part2"> <inertial> <origin xyz="0 0 0.015" rpy="0 0 0"/> <mass value="0.296"/> <inertia ixx="5.2e-05" iyy="5.2e-05" izz="5.9e-05" ixy="0.0" iyz="0.0" ixz="0.0"/> </inertial> <visual> <origin xyz="0 0 0" rpy="0 0 3.14159"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/extra.stl" scale="0.001 0.001 0.001"/> </geometry> <material name="grey"/> </visual> <collision> <origin xyz="0 0 0.0" rpy="0 0 0"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/extra.stl" scale="0.001 0.001 0.001"/> </geometry> </collision> </link> <joint name="sensors_joint" type="fixed"> <origin xyz="0 0 0" rpy="0 0 0"/> <parent link="base_link"/> <child link="part2"/> </joint>
+
+<link name="lcd"> <inertial> <origin xyz="0 0 0.015" rpy="0 0 0"/> <mass value="0.050"/> <inertia ixx="1e-05" iyy="1e-05" izz="1e-05" ixy="0.0" iyz="0.0" ixz="0.0"/> </inertial> <visual> <origin xyz="0 0 0" rpy="0 0 3.14159"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/led.stl" scale="0.001 0.001 0.001"/> </geometry> <material name="white"/> </visual> <collision> <origin xyz="0 0 0" rpy="0 0 0"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/led.stl" scale="0.001 0.001 0.001"/> </geometry> </collision> </link> <joint name="display_joint" type="fixed"> <origin xyz="0 0 0" rpy="0 0 0"/> <parent link="base_link"/> <child link="lcd"/> </joint>
+
+<link name="push_button"> <inertial> <origin xyz="0 0 0.0" rpy="0 0 0"/> <mass value="0.050"/> <inertia ixx="1e-05" iyy="1e-05" izz="1e-05" ixy="0.0" iyz="0.0" ixz="0.0"/> </inertial> <visual> <origin xyz="0 0 0" rpy="0 0 3.14159"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/switch.stl" scale="0.001 0.001 0.001"/> </geometry> <material name="red"/> </visual> <collision> <origin xyz="0 0 0" rpy="0 0 0"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/switch.stl" scale="0.001 0.001 0.001"/> </geometry> </collision> </link> <joint name="button_joint" type="fixed"> <origin xyz="0 0 0" rpy="0 0 0"/> <parent link="base_link"/> <child link="push_button"/> </joint>
+
+<!-- ═══════════════════════════════════════════════════════════════════ LIDAR LINK ═══════════════════════════════════════════════════════════════════ -->
+
+<link name="lidar"> <inertial> <origin xyz="0 0 0" rpy="0 0 0"/> <mass value="0.200"/> <inertia ixx="5.2e-05" iyy="5.2e-05" izz="5.9e-05" ixy="0.0" iyz="0.0" ixz="0.0"/> </inertial> <visual> <origin xyz="0.079 0.013 -0.133" rpy="0 0 3.14159"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/lidar.stl" scale="0.001 0.001 0.001"/> </geometry> <material name="grey"/> </visual> <collision> <origin xyz="0 0 -0.1" rpy="0 0 0"/> <geometry> <mesh filename="file://$(find robo_desc)/meshes/lidar.stl" scale="0.001 0.001 0.001"/> </geometry> </collision> </link> <joint name="lidar_joint" type="fixed"> <origin xyz="-0.079 0.0 0.133" rpy="0 0 0"/> <parent link="base_link"/> <child link="lidar"/> </joint>
+
+<!-- ═══════════════════════════════════════════════════════════════════ IMU LINK ═══════════════════════════════════════════════════════════════════ -->
+
+<link name="imu_link"> <inertial> <origin xyz="0 0 0" rpy="0 0 0"/> <mass value="0.010"/> <inertia ixx="1e-6" iyy="1e-6" izz="1e-6" ixy="0.0" iyz="0.0" ixz="0.0"/> </inertial> <visual> <origin xyz="0 0 0" rpy="0 0 0"/> <geometry><box size="0.02 0.02 0.01"/></geometry> <material name="red"/> </visual> <collision> <origin xyz="0 0 0" rpy="0 0 0"/> <geometry><box size="0.02 0.02 0.01"/></geometry> </collision> </link> <joint name="imu_joint" type="fixed"> <origin xyz="0 0 0.05" rpy="0 0 0"/> <parent link="base_link"/> <child link="imu_link"/> </joint>
+
+<!-- ═══════════════════════════════════════════════════════════════════ GAZEBO PLUGINS ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Mecanum Drive -->
+
+<gazebo> <plugin filename="gz-sim-mecanum-drive-system" name="gz::sim::systems::MecanumDrive">
+
+  <!-- Swapped order because robot is rotated 180 deg -->
+  <front_left_joint>left_f</front_left_joint>
+  <front_right_joint>right_f</front_right_joint>
+  <back_left_joint>left_b</back_left_joint>
+  <back_right_joint>right_b</back_right_joint>
+
+  <!-- Geometry -->
+  <wheel_separation>0.204108</wheel_separation>
+  <wheelbase>0.151410</wheelbase>
+  <wheel_radius>${wheel_radius}</wheel_radius>
+
+  <!-- Topics -->
+  <topic>cmd_vel</topic>
+  <odom_topic>odom</odom_topic>
+  <tf_topic>tf</tf_topic>
+
+  <!-- Frames -->
+  <frame_id>odom</frame_id>
+  <child_frame_id>base_footprint</child_frame_id>
+
+  <!-- Odom -->
+  <odom_publish_frequency>50</odom_publish_frequency>
+  <publish_odom>true</publish_odom>
+  <publish_odom_tf>true</publish_odom_tf>
+  <publish_wheel_tf>false</publish_wheel_tf>
+
+  <!-- Velocity limits -->
+  <min_velocity>-2.0</min_velocity>
+  <max_velocity>2.0</max_velocity>
+  <min_acceleration>-5.0</min_acceleration>
+  <max_acceleration>5.0</max_acceleration>
+
+</plugin>
+
+</gazebo>
+
+<!-- Joint State Publisher -->
+
+<gazebo> <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher"> <joint_name>right_f</joint_name> <joint_name>right_b</joint_name> <joint_name>left_f</joint_name> <joint_name>left_b</joint_name> <topic>joint_states</topic> <update_rate>50</update_rate> </plugin> </gazebo>
+
+<!-- 2-D LiDAR -->
+
+<gazebo reference="lidar"> <sensor name="gpu_lidar" type="gpu_lidar"> <pose>0 0 0 0 0 0</pose> <topic>scan</topic> <update_rate>10</update_rate> <ray> <scan> <horizontal> <samples>360</samples> <resolution>1</resolution> <min_angle>-3.14159265</min_angle> <max_angle> 3.14159265</max_angle> </horizontal> </scan> <range> <min>0.15</min> <max>12.0</max> <resolution>0.01</resolution> </range> <noise> <type>gaussian</type> <mean>0.0</mean> <stddev>0.01</stddev> </noise> </ray> <always_on>true</always_on> <visualize>true</visualize> <gz_frame_id>lidar</gz_frame_id> </sensor> </gazebo>
+
+<!-- IMU -->
+
+<gazebo reference="imu_link"> <sensor name="imu_sensor" type="imu"> <pose>0 0 0 0 0 0</pose> <topic>imu</topic> <update_rate>100</update_rate> <imu> <angular_velocity> <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev> <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></x> <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev> <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></y> <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev> <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></z> </angular_velocity> <linear_acceleration> <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev> <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x> <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev> <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y> <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev> <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z> </linear_acceleration> </imu> <always_on>true</always_on> <gz_frame_id>imu_link</gz_frame_id> </sensor> </gazebo>
+
+<!-- ═══════════════════════════════════════════════════════════════════ GAZEBO MATERIAL / VISUAL PROPERTIES (friction now lives inside <collision><surface> above — not here) ═══════════════════════════════════════════════════════════════════ -->
+
+<gazebo reference="base_link"> <material>Gazebo/DarkGrey</material> </gazebo>
+<gazebo reference="right_front"> <material>Gazebo/White</material> </gazebo>
+<gazebo reference="right_back"> <material>Gazebo/White</material> </gazebo>
+<gazebo reference="left_front"> <material>Gazebo/White</material> </gazebo>
+<gazebo reference="left_back"> <material>Gazebo/White</material> </gazebo>
+<gazebo reference="lidar"> <material>Gazebo/Grey</material> </gazebo>
+<gazebo reference="imu_link"> <material>Gazebo/Red</material> </gazebo>
+<gazebo reference="lcd"> <material>Gazebo/White</material> </gazebo>
+<gazebo reference="push_button"> <material>Gazebo/Red</material> </gazebo>
+<gazebo reference="part2"> <material>Gazebo/Grey</material> </gazebo>
+
+</robot>
+ <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+  </joint>
+
+  <!-- ═══════════════ BASE LINK ═══════════════ -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="2.5"/>
+      <inertia ixx="0.03311" iyy="0.019021" izz="0.0495"
+               ixy="0" iyz="0" ixz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
+      <geometry><box size="0.20 0.18 0.08"/></geometry>
+      <material name="blue"><color rgba="0 0.1 0.6 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
+      <geometry><box size="0.20 0.18 0.08"/></geometry>
+    </collision>
+  </link>
+
+  <!-- ═══════════════ WHEEL MACRO ═══════════════
+       Collision = SPHERE (gz-sim mecanum pattern)
+       Friction set via <gazebo reference> block below
+  ══════════════════════════════════════════════ -->
+  <xacro:macro name="wheel" params="name jx jy fdir1_x fdir1_y">
+
+    <link name="${name}">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="0.789"/>
+        <inertia ixx="0.000422" iyy="0.000761" izz="0.000422"
+                 ixy="0" iyz="0" ixz="0"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="white"><color rgba="1 1 1 1"/></material>
+      </visual>
+      <!-- SPHERE for collision — required for gz-sim mecanum fdir1 to work -->
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><sphere radius="${wheel_radius}"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${name}_joint" type="continuous">
+      <origin xyz="${jx} ${jy} 0" rpy="0 0 0"/>
+      <parent link="base_link"/>
+      <child  link="${name}"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.01" friction="0.0"/>
+    </joint>
+
+    <!-- Anisotropic friction — gz:expressed_in tells gz-sim the frame for fdir1 -->
+    <gazebo reference="${name}">
+      <material>Gazebo/White</material>
+      <collision>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.5</mu>
+              <mu2>0.0</mu2>
+              <fdir1 gz:expressed_in="base_footprint">${fdir1_x} ${fdir1_y} 0</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- ═══════════════ WHEEL INSTANCES ═══════════════
+       fdir1 encodes the 45° roller angle per wheel:
+         front_left  / rear_right  →  1 -1  (rollers at -45°)
+         front_right / rear_left   →  1  1  (rollers at +45°)
+  ═════════════════════════════════════════════════ -->
+  <xacro:wheel name="front_left"
+    jx=" ${wheelbase/2}"  jy=" ${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="-1"/>
+
+  <xacro:wheel name="front_right"
+    jx=" ${wheelbase/2}"  jy="-${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="1"/>
+
+  <xacro:wheel name="rear_left"
+    jx="-${wheelbase/2}"  jy=" ${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="1"/>
+
+  <xacro:wheel name="rear_right"
+    jx="-${wheelbase/2}"  jy="-${wheel_separation/2}"
+    fdir1_x="1" fdir1_y="-1"/>
+
+  <!-- ═══════════════ LIDAR ═══════════════ -->
+  <link name="lidar_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.2"/>
+      <inertia ixx="5.2e-05" iyy="5.2e-05" izz="5.9e-05"
+               ixy="0" iyz="0" ixz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+      <material name="grey"><color rgba="0.5 0.5 0.5 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+    </collision>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="lidar_link"/>
+  </joint>
+
+  <!-- ═══════════════ IMU ═══════════════ -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" iyy="1e-6" izz="1e-6"
+               ixy="0" iyz="0" ixz="0"/>
+    </inertial>
+    <visual>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+      <material name="red"><color rgba="0.8 0 0 1"/></material>
+    </visual>
+    <collision>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+    </collision>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+  </joint>
+
+  <!-- ═══════════════ GAZEBO PLUGINS ═══════════════ -->
+  <gazebo>
+    <plugin filename="gz-sim-mecanum-drive-system"
+            name="gz::sim::systems::MecanumDrive">
+      <front_left_joint>front_left_joint</front_left_joint>
+      <front_right_joint>front_right_joint</front_right_joint>
+      <back_left_joint>rear_left_joint</back_left_joint>
+      <back_right_joint>rear_right_joint</back_right_joint>
+      <wheel_separation>${wheel_separation}</wheel_separation>
+      <wheelbase>${wheelbase}</wheelbase>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+      <min_velocity>-2.0</min_velocity>
+      <max_velocity>2.0</max_velocity>
+      <min_acceleration>-5.0</min_acceleration>
+      <max_acceleration>5.0</max_acceleration>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <joint_name>front_left_joint</joint_name>
+      <joint_name>front_right_joint</joint_name>
+      <joint_name>rear_left_joint</joint_name>
+      <joint_name>rear_right_joint</joint_name>
+      <topic>joint_states</topic>
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+  <!-- 2-D LiDAR sensor -->
+  <gazebo reference="lidar_link">
+    <material>Gazebo/Grey</material>
+    <sensor name="gpu_lidar" type="gpu_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle> 3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <gz_frame_id>lidar_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU sensor -->
+  <gazebo reference="imu_link">
+    <material>Gazebo/Red</material>
+    <sensor name="imu_sensor" type="imu">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>imu</topic>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev>
+            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev>
+            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <always_on>true</always_on>
+      <gz_frame_id>imu_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="base_link"><material>Gazebo/Blue</material></gazebo>
+
+</robot>

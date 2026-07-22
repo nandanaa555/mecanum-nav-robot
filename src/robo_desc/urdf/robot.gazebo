@@ -1,0 +1,225 @@
+<?xml version="1.0"?>
+<!--
+  robot.gazebo
+  ────────────
+  Gazebo plugin definitions for the robo_desc robot.
+
+  Plugins included:
+    1.  Mecanum-wheel drive   (gz-sim-mecanum-drive-system)
+    2.  Joint State Publisher  (gz-sim-joint-state-publisher-system)
+    3.  2-D LiDAR              (gpu_lidar sensor on <lidar> link)
+    4.  IMU                    (imu sensor on <base_link>)
+
+  Include this file at the BOTTOM of robot.xacro:
+    <xacro:include filename="$(find robo_desc)/urdf/robot.gazebo"/>
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       1.  MECANUM DRIVE PLUGIN
+       ════════════════════════════════════════════════════════════════════
+       Wheel layout assumed (top-down view, X → forward, Y → left):
+
+           RF (right_f)    LF (left_f)
+               ●───────────●
+               │           │
+               ●───────────●
+           RB (right_b)    LB (left_b)
+
+       Joint names match the xacro joints exactly.
+       Wheel separation (Y): 2 × 0.102054 = 0.204108 m
+       Wheel base     (X): 0.083355 + 0.068055 = 0.151410 m
+       Wheel radius       : 0.0439222 m
+  ════════════════════════════════════════════════════════════════════ -->
+  <gazebo>
+    <plugin filename="gz-sim-mecanum-drive-system"
+            name="gz::sim::systems::MecanumDrive">
+
+      <!-- Wheel joints — order: front-left, front-right, back-left, back-right -->
+      <front_left_joint>left_f</front_left_joint>
+      <front_right_joint>right_f</front_right_joint>
+      <back_left_joint>left_b</back_left_joint>
+      <back_right_joint>right_b</back_right_joint>
+
+      <!-- Geometry (derived from your URDF offsets) -->
+      <wheel_separation>0.204108</wheel_separation>   <!-- Y: 2 × 0.102054 -->
+      <wheelbase>0.15141</wheelbase>                  <!-- X: 0.083355 + 0.068055 -->
+      <wheel_radius>0.0439222</wheel_radius>
+
+      <!-- ROS 2 topic interfaces -->
+      <topic>cmd_vel</topic>                 <!-- geometry_msgs/Twist in  -->
+      <odom_topic>odom</odom_topic>          <!-- nav_msgs/Odometry   out -->
+      <tf_topic>tf</tf_topic>               <!-- tf2_msgs/TFMessage  out -->
+
+      <!-- Frame IDs -->
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+
+      <!-- Odometry publishing -->
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>true</publish_wheel_tf>
+
+      <!-- Velocity limits -->
+      <min_velocity>-2.0</min_velocity>
+      <max_velocity> 2.0</max_velocity>
+      <min_acceleration>-1.0</min_acceleration>
+      <max_acceleration> 1.0</max_acceleration>
+
+    </plugin>
+  </gazebo>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2.  JOINT STATE PUBLISHER
+       Publishes all 4 wheel joint positions/velocities to /joint_states
+  ════════════════════════════════════════════════════════════════════ -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <joint_name>right_f</joint_name>
+      <joint_name>right_b</joint_name>
+      <joint_name>left_f</joint_name>
+      <joint_name>left_b</joint_name>
+      <topic>joint_states</topic>
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       3.  2-D LiDAR  (attached to the <lidar> link)
+
+       Specs:
+         • 360° full sweep  (−π … +π)
+         • 12 m max range
+         • 10 Hz update rate
+         • 360 rays / revolution → 1° angular resolution
+         • Gaussian noise σ = 0.01 m
+       Publishes: /scan  (sensor_msgs/LaserScan via ros_gz_bridge)
+  ════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="lidar">
+    <sensor name="gpu_lidar" type="gpu_lidar">
+
+      <!-- Sensor pose relative to the lidar link origin -->
+      <pose>0 0 0 0 0 0</pose>
+
+      <!-- ROS topic (bridged by ros_gz_bridge) -->
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle> 3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+
+      <!-- Frame reported in the LaserScan header -->
+      <gz_frame_id>lidar</gz_frame_id>
+
+    </sensor>
+  </gazebo>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       4.  IMU  (mounted on base_link — centred on chassis)
+
+       Specs:
+         • 100 Hz
+         • Angular velocity noise: σ = 2×10⁻⁴ rad/s
+         • Linear acceleration noise: σ = 1.7×10⁻² m/s²
+       Publishes: /imu  (sensor_msgs/Imu via ros_gz_bridge)
+  ════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="base_link">
+    <sensor name="imu_sensor" type="imu">
+
+      <pose>0 0 0.02 0 0 0</pose>   <!-- slight Z offset from chassis floor -->
+      <topic>imu</topic>
+      <update_rate>100</update_rate>
+
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev><bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev><bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev><bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev><bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev><bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev><bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+
+      <always_on>true</always_on>
+      <gz_frame_id>base_link</gz_frame_id>
+
+    </sensor>
+  </gazebo>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       MATERIAL OVERRIDES  (Gazebo visual colours)
+       These only affect the Gazebo renderer, not RViz.
+  ════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="base_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <gazebo reference="right_front">
+    <material>Gazebo/White</material>
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="right_back">
+    <material>Gazebo/White</material>
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="left_front">
+    <material>Gazebo/White</material>
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="left_back">
+    <material>Gazebo/White</material>
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+
+  <gazebo reference="lidar">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+  <gazebo reference="lcd">
+    <material>Gazebo/White</material>
+  </gazebo>
+  <gazebo reference="push_button">
+    <material>Gazebo/Red</material>
+  </gazebo>
+  <gazebo reference="part2">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+
+</robot>
