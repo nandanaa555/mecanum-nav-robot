@@ -195,7 +195,7 @@ The computed odometry is published over ROS2 and consumed directly by **SLAM Too
 
 **Assigning Nav2 gaol**
 
-<img src="media/gaol.png" width="430">
+<img src="media/goal.png" width="430">
 
 </td>
 <td align="center" width="50%">
