@@ -19,160 +19,200 @@ Built end to end in this repo: a custom robot design, its URDF, a Gazebo simulat
 
 ---
 
-## Design
+# Design & URDF
 
-<div align="center">
-<img src="design/robot.png" width="720" alt="Robot design in Fusion 360">
-</div>
+<table>
+<tr>
+<td align="center" width="50%">
 
-The chassis was modeled in **Autodesk Fusion 360**. The design is inspired by *Arjuna*, a robot from the robotics startup **NEWRRO**, adapted here into a four-wheel mecanum base for this project.
+### Fusion 360 Design
 
-## URDF
+<img src="design/robot.png" width="430">
 
-<div align="center">
-<img src="media/robot_in_rviz.png" width="720" alt="Robot URDF rendered in RViz">
-</div>
+</td>
 
-The Fusion 360 model was converted into a **URDF** (via Xacro), defining every link, joint, wheel, and sensor mount — LiDAR and IMU included — so the robot simulates accurately in Gazebo and visualizes correctly in RViz2.
+<td align="center" width="50%">
 
-## Gazebo Simulation
+### URDF in RViz
 
-<p align="center">
-  <img src="media/robot_in_gazebo.png" width="800">
-</p>
----
+<img src="media/robot_in_rviz.png" width="430">
 
-## Tech stack
+</td>
+</tr>
+</table>
 
-| Layer              | Technology                                       |
-| ------------------ | ------------------------------------------------- |
-| Robot framework     | ROS2 Jazzy                                        |
-| Simulation          | Gazebo Harmonic (`gz sim`)                        |
-| Robot description   | URDF / Xacro                                      |
-| Drive type          | Mecanum wheel — 4WD omnidirectional               |
-| Sensing             | Simulated LiDAR                                   |
-| Odometry            | Custom mecanum forward-kinematics node (Python)   |
-| Mapping             | SLAM Toolbox                                      |
-| Navigation          | Nav2                                              |
-| Visualization       | RViz2                                             |
-| 3D design           | Autodesk Fusion 360                               |
-| ROS↔Sim bridge      | `ros_gz_bridge`                                   |
+The chassis was modeled in **Autodesk Fusion 360**. The design is inspired by **Arjuna**, a robot from the robotics startup **NEWRRO**, adapted into a four-wheel mecanum platform.
+
+The Fusion 360 model was converted into a **URDF/Xacro**, defining every link, joint, wheel, LiDAR mount, and IMU mount so the robot simulates accurately in Gazebo and visualizes correctly in RViz2.
 
 ---
 
-## Project structure
+# Simulation Results
 
-Four ROS2 packages, each with a single responsibility:
+<table>
+<tr>
+<td align="center" width="50%">
 
-```
+### Gazebo Simulation
+
+<img src="media/robot_in_gazebo.png" width="430">
+
+</td>
+
+<td align="center" width="50%">
+
+### Generated Map
+
+<img src="media/map_in_rviz.png" width="430">
+
+</td>
+</tr>
+</table>
+
+The robot runs inside **Gazebo Harmonic**, while **SLAM Toolbox** generates a real-time occupancy grid map for autonomous navigation.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Robot framework | ROS2 Jazzy |
+| Simulation | Gazebo Harmonic |
+| Robot description | URDF / Xacro |
+| Drive | Four-wheel Mecanum |
+| Sensors | Simulated LiDAR |
+| Odometry | Custom Python Forward Kinematics |
+| Mapping | SLAM Toolbox |
+| Navigation | Nav2 |
+| Visualization | RViz2 |
+| Bridge | ros_gz_bridge |
+
+---
+
+## Project Structure
+
+```text
 mecanum-nav-robot/
-├── design/                          # Fusion 360 design exports/renders
-├── docs/                            # URDF screenshots and reference docs
-├── media/                           # Demo videos
+├── design/
+├── docs/
+├── media/
 ├── src/
-│   ├── robo_desc/                   # Robot description + Gazebo simulation
-│   │   ├── urdf/robot.xacro         # Robot description (URDF/Xacro)
-│   │   ├── launch/gazebo.launch.py  # Main simulation launch
-│   │   ├── launch/display.launch.py # RViz-only launch (URDF, no sim)
-│   │   ├── world/nav_world.sdf      # Simulation world (SDF)
-│   │   ├── config/ros_gz_bridge_gazebo_2.yaml
-│   │   └── meshes/                  # Custom STL meshes (wheels, body, LiDAR)
-│   │
-│   ├── mecanum_odom/                # Custom odometry package
-│   │   └── mecanum_odom/odom_node.py
-│   │
-│   ├── robo_bringup/                # SLAM + Nav2 bringup package
-│   │   ├── config/mapper_params_online_async.yaml   # SLAM Toolbox params
-│   │   ├── config/nav2_params.yaml                  # Nav2 stack params
-│   │   ├── launch/slam.launch.py                    # Sim + online SLAM mapping
-│   │   ├── launch/navigation.launch.py               # Sim + Nav2 navigation
-│   │   ├── launch/auto_patrol_nav.launch.py          # Navigation + autonomous patrol
-│   │   └── maps/my_map.pgm, my_map.yaml              # Saved occupancy grid map
-│   │
-│   └── auto_patrol/                 # Autonomous patrol behavior package
-│       └── auto_patrol/patrol.py    # Sends the robot on a patrol route via Nav2
-│
+│   ├── robo_desc/
+│   ├── mecanum_odom/
+│   ├── robo_bringup/
+│   └── auto_patrol/
 └── README.md
 ```
 
 ---
 
-## How it works
+# How it Works
 
-### Mecanum wheel odometry
+### Custom Mecanum Odometry
 
-The robot uses **four mecanum wheels** — angled-roller wheels that let it move in any direction (forward, sideways, diagonal) without rotating the body.
+Gazebo's default odometry plugin is inaccurate for this robot because the mecanum wheels use simplified collision spheres.
 
-**Why a custom odometry node?** Gazebo's built-in odometry plugin relies on wheel collision geometry to compute motion. This robot's mecanum wheels use a **sphere as the collision primitive** — a common simplification for the angled-roller contact point — which makes Gazebo's default odometry inaccurate for this drive type.
+Instead, a custom Python node computes forward kinematics directly from wheel joint states:
 
-To fix that, `odom_node.py` bypasses Gazebo's plugin entirely and computes odometry straight from **joint states** using mecanum forward kinematics:
+```text
+vx = r/4 (wlf + wrf + wlb + wrb)
 
+vy = r/4 (-wlf + wrf + wlb - wrb)
+
+wz = r/(4(L+W)) (-wlf + wrf - wlb + wrb)
 ```
-vx  = r/4 * ( w_lf + w_rf + w_lb + w_rb )            ← forward / backward
-vy  = r/4 * (-w_lf + w_rf + w_lb - w_rb )            ← left / right strafe
-wz  = r / (4*(L+W)) * (-w_lf + w_rf - w_lb + w_rb)   ← rotation
-```
-`r` = wheel radius · `L` = half wheelbase · `W` = half wheel separation
 
-This gives accurate real-time position and heading, which feeds directly into SLAM.
+The computed odometry is published to ROS2 and consumed by **SLAM Toolbox** and **Nav2**.
 
-### Launch sequence
+---
 
-```
-0s → Gazebo starts with the simulation world
-0s → Robot State Publisher starts
-5s → Robot spawns in Gazebo
-6s → ROS–Gazebo bridge starts (connects topics)
-7s → Mecanum odometry node starts
-9s → RViz2 opens for visualization
+## Launch Sequence
+
+```text
+0 s  → Gazebo starts
+0 s  → Robot State Publisher
+5 s  → Robot spawned
+6 s  → ros_gz_bridge
+7 s  → Custom Odometry Node
+9 s  → RViz2
 ```
 
 ---
 
-## Getting started
+# Autonomous Navigation
 
-### Prerequisites
+<table>
+<tr>
+<td align="center" width="50%">
 
-- Ubuntu 22.04 / 24.04
-- ROS2 Jazzy
-- Gazebo Harmonic
-- `slam_toolbox`
+### Navigation
+
+<img src="media/nav.png" width="430">
+
+</td>
+
+<td align="center" width="50%">
+
+### Goal Reached
+
+<img src="media/goal.png" width="430">
+
+</td>
+</tr>
+</table>
+
+The robot autonomously plans and follows collision-free paths using the **Nav2 navigation stack**, successfully reaching the selected goal pose.
+
+---
+
+## Getting Started
+
+### Install Dependencies
 
 ```bash
 sudo apt install ros-jazzy-slam-toolbox ros-jazzy-nav2-* ros-jazzy-ros-gz-bridge
 ```
 
-### Clone and build
+### Clone
 
 ```bash
 git clone https://github.com/nandanaa555/mecanum-nav-robot.git
+
 cd mecanum-nav-robot
+
 colcon build
+
 source install/setup.bash
 ```
 
-### Map an environment
+### Mapping
 
 ```bash
 ros2 launch robo_bringup slam.launch.py
 ```
-In a new terminal:
+
+Open another terminal:
+
 ```bash
 source install/setup.bash
+
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
-Save the map once mapping is complete:
+
+Save map:
+
 ```bash
 ros2 run nav2_map_server map_saver_cli -f my_map
 ```
 
-### Navigate autonomously
+### Navigation
 
 ```bash
 ros2 launch robo_bringup navigation.launch.py
 ```
 
-### Run the autonomous patrol behavior
+### Autonomous Patrol
 
 ```bash
 ros2 launch robo_bringup auto_patrol_nav.launch.py
@@ -180,56 +220,27 @@ ros2 launch robo_bringup auto_patrol_nav.launch.py
 
 ---
 
-## Generated map
+# Demo Videos
 
-
-<p align="center">
-  <img src="media/map_in_rviz.png" width="800">
-</p>
-
-The robot successfully maps the warehouse environment using SLAM Toolbox.
-The robot successfully maps its environment as a 2D occupancy grid (`my_map.pgm` + `my_map.yaml`):
-
-- **Resolution:** 0.05 m/pixel (5 cm per pixel)
-- **White** = free space · **Black** = walls/obstacles · **Grey** = unknown
----
-
-## Navigation
-
-<p align="center">
-  <img src="media/nav.png" width="800" alt="Autonomous Navigation">
-</p>
-
-The robot autonomously navigates to the selected destination using the Nav2 stack.
+- 🎥 [Simulation Demo](media/demo.webm)
+- 🎥 [SLAM Mapping](media/mapping.webm)
+- 🎥 [Waypoint Navigation](media/way_point_nav.webm)
+- 🎥 [Goal Navigation](media/goal_navigation.webm)
 
 ---
 
-## Goal Navigation
-
-<p align="center">
-  <img src="media/goal.png" width="800" alt="Goal Navigation">
-</p>
-
-The robot successfully reaches the goal pose while avoiding obstacles using global and local path planning.
----
-
-## Demo videos
-
-📹 **[Main simulation walkthrough](media/demo.webm)** — robot spawning, SLAM mapping in progress, and the final map in RViz.
-
-More recordings from testing and development:
-- [Video 2](media/video2.webm)
-- [Video 3](media/video3.webm)
-
-*(Browse the full set in [`media/`](media/).)*
-
----
-
-## Author
+# Author
 
 **Nandanaa M S**
-[GitHub](https://github.com/nandanaa555) · nandanaams555@gmail.com · Bengaluru, Karnataka
 
-## License
+📧 nandanaams555@gmail.com
 
-MIT License — feel free to use and build on this project.
+🌐 https://github.com/nandanaa555
+
+📍 Bengaluru, Karnataka
+
+---
+
+# License
+
+MIT License
