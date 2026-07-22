@@ -239,11 +239,7 @@ source install/setup.bash
 ```bash
 ros2 launch robo_bringup slam.launch.py
 ```
-In a new terminal:
-```bash
-source install/setup.bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
+
 Save the map once mapping is complete:
 ```bash
 ros2 run nav2_map_server map_saver_cli -f my_map
@@ -252,13 +248,13 @@ ros2 run nav2_map_server map_saver_cli -f my_map
 ### Navigate autonomously
 
 ```bash
-ros2 launch robo_bringup navigation.launch.py
+ros2 launch robo_bringup navigation.launch.py map:=/home/haha/v_hack_ws/src/robo_bringup/maps/my_map.yaml
 ```
 
 ### Run the autonomous patrol behavior
 
 ```bash
-ros2 launch robo_bringup auto_patrol_nav.launch.py
+ros2 launch robo_bringup auto_patrol_nav.launch.py map:=/home/haha/v_hack_ws/src/robo_bringup/maps/my_map.yaml
 ```
 
 ---
