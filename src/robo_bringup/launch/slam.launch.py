@@ -22,8 +22,8 @@ def generate_launch_description():
     xacro_file    = os.path.join(pkg_share, 'urdf',   'robot.xacro')
     rviz_config   = os.path.join(pkg_share, 'config', 'new.rviz')
     bridge_config = os.path.join(pkg_share, 'config', 'ros_gz_bridge_gazebo_2.yaml')
+    world = os.path.join(pkg_share, "world", "ware2.sdf")
 
-    world = os.path.join("/home/haha/v_hack_ws/src/robo_desc/world/ware2.sdf")
     # ── Xacro → URDF ──────────────────────────────────────────────────────────
     robot_description = xacro.process_file(xacro_file).toxml()
 
