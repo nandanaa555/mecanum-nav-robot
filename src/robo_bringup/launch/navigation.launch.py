@@ -24,8 +24,8 @@ def generate_launch_description():
     bridge_config = os.path.join(pkg_share, 'config', 'ros_gz_bridge_gazebo_2.yaml')
 
     map_yaml = "/home/haha/v_hack_ws/src/robo_bringup/maps/my_map.yaml"
+    world = os.path.join(pkg_share, "world", "ware2.sdf")
 
-    world = os.path.join("/home/haha/v_hack_ws/src/robo_desc/world/ware2.sdf")
     # ── Xacro → URDF ──────────────────────────────────────────────────────────
     robot_description = xacro.process_file(xacro_file).toxml()
 
