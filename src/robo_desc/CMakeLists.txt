@@ -18,6 +18,7 @@ install(
     urdf
     meshes
     config
+    world
   DESTINATION share/${PROJECT_NAME}
 )
 
